@@ -1,0 +1,9 @@
+[package]
+edition = "2021"
+name = "faebuild"
+version = "0.1.0"
+[dependencies]
+serde = "1.0.137"
+serde_json = "1.0.81"
+serde_yaml = "0.8.24"
+clap = {version = "3.1.18", features = ["derive"]}
