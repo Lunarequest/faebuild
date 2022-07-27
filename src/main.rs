@@ -4,6 +4,7 @@ use cli::Commands;
 use std::{path::PathBuf, process::exit, str::FromStr};
 mod build;
 mod cli;
+mod recipe;
 
 fn main() {
     let cli_flags = cli::Cli::parse();
@@ -11,7 +12,7 @@ fn main() {
         Commands::Build { path } => {
             let path = match path {
                 Some(a) => a,
-                None => PathBuf::from_str(".").expect("failed to convert '.' to path"),
+                None => PathBuf::from_str("FAEPKG").expect("failed to convert '.' to path"),
             };
             if !path.exists() {
                 eprintln!("The path {}, does not exist", path.display());
