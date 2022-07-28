@@ -28,5 +28,6 @@ pub struct Sources {
     pub url: Option<String>,
     pub path: Option<String>,
     pub commit: Option<String>,
+    pub recursive: Option<bool>,
     pub tag: Option<String>,
 }

@@ -5,6 +5,7 @@ use std::{path::PathBuf, process::exit, str::FromStr};
 mod build;
 mod cli;
 mod recipe;
+mod src;
 
 fn main() {
     let cli_flags = cli::Cli::parse();
