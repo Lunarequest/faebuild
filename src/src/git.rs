@@ -50,14 +50,16 @@ pub fn git_solver(sources: Sources) {
                     exit(1);
                 }
             };
-            let _branch = repo.branch(&commit, &commit_git, false).unwrap();
-            let obj = repo
-                .revparse_single(&("refs/heads/".to_owned() + &commit))
-                .unwrap();
-            repo.checkout_tree(&obj, None).expect("");
-
-            repo.set_head(&("refs/heads/".to_owned() + &commit))
-                .expect("");
+            let head=repo.head().expect("").peel_to_commit().expect("");
+            if head.id() != commit_git.id() {
+                let _branch = repo.branch(&commit, &commit_git, false).unwrap();
+                let obj = repo
+                    .revparse_single(&("refs/heads/".to_owned() + &commit))
+                    .unwrap();
+                repo.checkout_tree(&obj, None).expect("");
+                repo.set_head(&("refs/heads/".to_owned() + &commit))
+                    .expect("");
+            }
         }
     }
 }
