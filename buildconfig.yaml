@@ -1,0 +1,34 @@
+name: 
+  - example 1
+  - example 2
+license: GPLv2
+version: v1.1.3
+rel: 1
+arch:
+  - x86_64
+  - aarch64
+url: https://example.org/examplepackage
+depends:
+  - python
+builddepends:
+  - compiler-collections
+  - linux-headers
+  - cmake
+  - python
+buildtype: cmake/meson/simple
+configopts: # only required if buildtype != simple
+  - --someconfig
+  - --anotherconfig
+buildsteps: # only required if buildtype = simple
+  - some command to execute
+  - another commandto execute
+sources:
+  - type: git/archive/file/patch
+    path: some path, either this or path is needed for all other types then git
+    url: another url
+    sha256sum: need if type is not git
+    commit: need if git
+    tag: optional in git, highly suggested
+permissions:
+  - path: some path
+    permissions: some special perm like suid

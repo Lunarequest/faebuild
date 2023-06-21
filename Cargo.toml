@@ -1,0 +1,23 @@
+[package]
+name = "faebuild"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bzip2 = "0.4.4"
+clap = { version = "4.3.3", features = ["derive"] }
+flate2 = "1.0.26"
+futures = "0.3.28"
+git2 = "0.17.2"
+gzip = "0.1.2"
+indicatif = "0.17.5"
+reqwest = { version = "0.11.18", features = ["rustls", "blocking", "trust-dns", "stream"] }
+serde = { version = "1.0.164", features = ["derive"] }
+sha256 = "1.1.4"
+tar = "0.4.38"
+url = { version = "2.4.0", features = ["serde"] }
+xz2 = "0.1.7"
+zip = "0.6.6"
+zstd = { version = "0.12.3", features = ["thin-lto", "thin"], default-features = false }
