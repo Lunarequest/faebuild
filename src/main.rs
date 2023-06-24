@@ -1,12 +1,18 @@
 mod buildconfig;
 mod cli;
 mod utils;
-use std::{path::PathBuf, process::exit};
-
+use buildconfig::BuildConfig;
 use clap::Parser;
 use cli::{Cli, Commands};
+use serde_yaml::from_reader;
+use std::{
+    fs::{create_dir, File},
+    path::PathBuf,
+    process::exit,
+};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
     match args.command {
         Commands::Build { path } => {
@@ -26,6 +32,19 @@ fn main() {
                 } else {
                     eprintln!("failed to find faebuild.yaml, does it exist?");
                     exit(72);
+                }
+
+                let workdir = builddir.join("build");
+                let srcdir = builddir.join("src");
+                create_dir(&workdir).expect("failed to create dir build");
+                create_dir(&srcdir).expect("failed to create directory src");
+
+                let file = File::open(buildconfig).unwrap();
+
+                let config: BuildConfig = from_reader(file).unwrap();
+
+                for source in config.sources {
+                    source.fetch(&srcdir, &workdir).await.unwrap();
                 }
             } else {
                 if args.verbose {

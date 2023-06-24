@@ -1,15 +1,9 @@
 //this defines build config as a struct along with a set of helper functions to deal with sources namely updating, downloading and verifying them
-use super::utils::download_with_pb;
-use bzip2::read::BzDecoder;
-use flate2::read::GzDecoder;
+use super::utils::{calculate_sha56sum, download_and_extract_with_sha, git};
+use git2::{build::CheckoutBuilder, Oid, Repository};
 use serde::Deserialize;
-use sha256::digest;
-use std::{collections::HashMap, fs::File, path::PathBuf, process::exit};
-use tar::Archive;
+use std::{collections::HashMap, path::PathBuf, process::exit, str};
 use url::Url;
-use xz2::read::XzDecoder;
-use zip::ZipArchive;
-use zstd::stream::Decoder;
 
 #[derive(Debug, Deserialize)]
 pub struct BuildConfig {
@@ -66,6 +60,7 @@ pub struct Sources {
     pub sha256sum: Option<String>,
     pub commit: Option<String>,
     pub tag: Option<String>,
+    pub recursive: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,7 +77,7 @@ pub enum SourceType {
 }
 
 impl Sources {
-    pub async fn fetch(self, src: PathBuf, workdir: PathBuf) -> Result<PathBuf, String> {
+    pub async fn fetch(self, src: &PathBuf, workdir: &PathBuf) -> Result<PathBuf, String> {
         match self.r#type {
             SourceType::Archive => match self.url {
                 None => {
@@ -109,48 +104,24 @@ impl Sources {
                             }
                         };
                         let src_out = src.join(out);
-                        let bytes = download_with_pb(url, src_out).await?;
-                        let sha = digest(bytes.as_ref());
-                        if sha256sum != sha {
-                            eprintln!("expected sha256sum: {sha256sum} got {sha}");
-                            exit(1);
-                        }
+                        if src_out.exists() {
+                            let cached_sum = calculate_sha56sum(&src_out)
+                                .await
+                                .map_err(|e| e.to_string())?;
 
-                        if src_out.ends_with(".gz") {
-                            let tar_gz = File::open(src_out).unwrap();
-                            let tar = GzDecoder::new(tar_gz);
-                            let mut archive = Archive::new(tar);
-                            archive.unpack(workdir).unwrap();
-                        } else if src_out.ends_with(".xz") {
-                            let tar_xz = File::open(src_out).unwrap();
-                            let tar = XzDecoder::new(tar_xz);
-                            let mut archive = Archive::new(tar);
-                            archive.unpack(workdir).unwrap();
-                        } else if src_out.ends_with(".bz2") {
-                            let tar_bz = File::open(src_out).unwrap();
-                            let tar = BzDecoder::new(tar_bz);
-                            let mut archive = Archive::new(tar);
-                            archive.unpack(workdir).unwrap();
-                        } else if src_out.ends_with(".zstd") {
-                            let tar_zstd = File::open(src_out).unwrap();
-                            let tar = Decoder::new(tar_zstd).unwrap();
-                            let mut archive = Archive::new(tar);
-                            archive.unpack(workdir).unwrap();
-                        } else if src_out.ends_with("zip") {
-                            let zip = File::open(src_out).unwrap();
-                            let mut zip_archive = ZipArchive::new(zip).unwrap();
-                            zip_archive.extract(workdir).unwrap();
+                            if cached_sum == sha256sum {
+                                return Ok(workdir.to_owned());
+                            } else {
+                                download_and_extract_with_sha(url, sha256sum, &src_out, &workdir)
+                                    .await
+                            }
+                        } else {
+                            download_and_extract_with_sha(url, sha256sum, &src_out, &workdir).await
                         }
-                        Ok(workdir)
                     }
                 },
             },
             SourceType::Git => {
-                if self.url.is_none() {
-                    eprintln!("Url is required for git source");
-                    exit(78);
-                }
-
                 if self.commit.is_none() {
                     eprintln!("Commit is required for git sources");
                     exit(78);
@@ -160,12 +131,73 @@ impl Sources {
                     let url_path = url.path_segments().unwrap();
                     let basename = url_path.last().unwrap().replace(".git", "");
                     let out = src.join(basename);
-                }
+                    let mut recursive = true;
+                    let repo: Repository;
+                    if let Some(rec) = self.recursive {
+                        recursive = rec
+                    }
+                    if out.exists() {
+                        repo = Repository::open(&out).map_err(|e| e.to_string())?;
+                        git::fetch(&repo)?;
+                    } else {
+                        if recursive {
+                            repo = match Repository::clone_recurse(&url.to_string(), &out) {
+                                Ok(repo) => repo,
+                                Err(e) => {
+                                    eprintln!("Failed to clone repo: {url}\n{e}");
+                                    exit(1);
+                                }
+                            }
+                        } else {
+                            repo = match Repository::clone(&url.to_string(), &out) {
+                                Ok(repo) => repo,
+                                Err(e) => {
+                                    eprintln!("Failed to clone repo: {url}\n{e}");
+                                    exit(1);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(commit_str) = self.commit {
+                        if let Some(tag) = self.tag {
+                            let oid = repo.refname_to_id(&tag).map_err(|e| e.to_string())?;
+                            let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+                            if oid.to_string() != commit_str {
+                                eprintln!(
+                                    "expected tag: {tag} to resolve to {commit_str} was {}",
+                                    commit.id()
+                                );
+                                exit(1);
+                            }
+                            let mut checkout_options = CheckoutBuilder::new();
+                            repo.checkout_tree(commit.as_object(), Some(&mut checkout_options))
+                                .map_err(|e| e.to_string())?;
+                            repo.set_head_detached(oid).map_err(|e| e.to_string())?;
+                        } else {
+                            let oid = Oid::from_str(&commit_str).unwrap();
+                            let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+                            let mut checkout_options = CheckoutBuilder::new();
+                            repo.checkout_tree(commit.as_object(), Some(&mut checkout_options))
+                                .map_err(|e| e.to_string())?;
+                            repo.set_head_detached(oid).map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        unreachable!();
+                    }
 
-                Ok(out)
+                    Ok(out)
+                } else {
+                    eprintln!("Url is required for git source");
+                    exit(78);
+                }
             }
-            SourceType::File => {}
-            SourceType::Patch => {}
+
+            SourceType::File => {
+                unimplemented!()
+            }
+            SourceType::Patch => {
+                unimplemented!()
+            }
         }
     }
 }

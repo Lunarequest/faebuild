@@ -1,17 +1,15 @@
+use futures::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
+use reqwest::Client;
 use std::{
     cmp::min,
     fs::File,
     io::{Seek, Write},
     path::PathBuf,
-    vec,
 };
-
-use reqwest::Client;
-
-use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
 use url::Url;
-pub async fn download_with_pb(url: Url, out: PathBuf) -> Result<Vec<u8>, String> {
+
+pub async fn download_with_pb(url: Url, out: &PathBuf) -> Result<(), String> {
     let client = Client::builder().build().unwrap();
     let res = client
         .get(url.clone())
@@ -31,7 +29,6 @@ pub async fn download_with_pb(url: Url, out: PathBuf) -> Result<Vec<u8>, String>
     let mut file;
     let mut downloaded = 0;
     let mut stream = res.bytes_stream();
-    let mut bytes: Vec<u8> = vec![];
 
     println!("Seeking in file.");
     if std::path::Path::new(&out).exists() {
@@ -53,7 +50,6 @@ pub async fn download_with_pb(url: Url, out: PathBuf) -> Result<Vec<u8>, String>
     println!("Commencing transfer");
     while let Some(item) = stream.next().await {
         let chunk = item.or(Err(format!("Error while downloading file")))?;
-        bytes.append(&mut chunk.to_vec());
         file.write(&chunk)
             .or(Err(format!("Error while writing to file")))?;
         let new = min(downloaded + (chunk.len() as u64), total_size);
@@ -63,5 +59,5 @@ pub async fn download_with_pb(url: Url, out: PathBuf) -> Result<Vec<u8>, String>
 
     let finishmsg = format!("Downloaded {} to {}", url, &out.display());
     pb.finish_with_message(finishmsg);
-    Ok(bytes)
+    Ok(())
 }

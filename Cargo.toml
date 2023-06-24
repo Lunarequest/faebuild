@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bzip2 = "0.4.4"
-clap = { version = "4.3.3", features = ["derive"] }
+clap = { version = "4.3.8", features = ["derive"] }
 flate2 = "1.0.26"
 futures = "0.3.28"
 git2 = "0.17.2"
@@ -15,9 +15,21 @@ gzip = "0.1.2"
 indicatif = "0.17.5"
 reqwest = { version = "0.11.18", features = ["rustls", "blocking", "trust-dns", "stream"] }
 serde = { version = "1.0.164", features = ["derive"] }
-sha256 = "1.1.4"
+serde_yaml = "0.9.22"
+sha2 = "0.10.7"
 tar = "0.4.38"
+tokio = { version = "1.28.2", features = ["macros", "rt-multi-thread"] }
 url = { version = "2.4.0", features = ["serde"] }
 xz2 = "0.1.7"
 zip = "0.6.6"
 zstd = { version = "0.12.3", features = ["thin-lto", "thin"], default-features = false }
+
+[profile.dev]
+lto = false
+
+[profile.release]
+strip = true # with strip it goes down to 15MB
+lto = true # adding lto it goes down to 12MB
+opt-level = "z" # stacking opt-level z it drops to 9.6MB
+codegen-units = 1 # adding this we drop to 9.2MB
+panic = "abort" # adding panic = abort drops size to 8.5MB after writing a custom hcaptcha component it drops to 8.1M
