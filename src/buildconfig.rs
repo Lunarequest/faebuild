@@ -1,8 +1,10 @@
 //this defines build config as a struct along with a set of helper functions to deal with sources namely updating, downloading and verifying them
-use super::utils::{calculate_sha56sum, download_and_extract_with_sha, git};
+use super::utils::{
+    calculate_sha56sum, download_and_extract_with_sha, download_with_pb, get_filename_from_url, git,
+};
 use git2::{build::CheckoutBuilder, Oid, Repository};
 use serde::Deserialize;
-use std::{collections::HashMap, path::PathBuf, process::exit, str};
+use std::{collections::HashMap, fs::copy, path::PathBuf, process::exit, str};
 use url::Url;
 
 #[derive(Debug, Deserialize)]
@@ -15,6 +17,7 @@ pub struct BuildConfig {
     pub license: String, //TODO: VERIFY SPDX
     pub depends: Option<String>,
     pub env: Option<HashMap<String, String>>,
+    pub subdir: Option<PathBuf>,
     pub builttype: BuildType,
     pub configopts: Vec<String>,
     pub builddepends: Option<String>,
@@ -91,18 +94,16 @@ impl Sources {
                     }
                     Some(sha256sum) => {
                         let selfpath = self.path;
-                        let out: PathBuf;
 
-                        if let Some(selfpath) = selfpath {
-                            out = selfpath;
+                        let out: PathBuf = if let Some(selfpath) = selfpath {
+                            selfpath
                         } else {
-                            let segments = url.path_segments().map(|c| c.collect::<Vec<_>>());
-                            if let Some(segments) = segments {
-                                out = PathBuf::from(segments.last().copied().unwrap());
-                            } else {
-                                out = PathBuf::from("out.tar.gz");
+                            match get_filename_from_url(&url) {
+                                Some(path) => PathBuf::from(path),
+                                None => PathBuf::from("out.tar.gz"),
                             }
                         };
+
                         let src_out = src.join(out);
                         if src_out.exists() {
                             let cached_sum = calculate_sha56sum(&src_out)
@@ -193,10 +194,100 @@ impl Sources {
             }
 
             SourceType::File => {
-                unimplemented!()
+                if self.url.is_some() {
+                    if self.sha256sum.is_none() {
+                        eprintln!("Source type was set to File and there was a url but no sha256sum was provided");
+                        exit(78);
+                    }
+                    if let Some(url) = self.url {
+                        let out = match get_filename_from_url(&url) {
+                            Some(path) => PathBuf::from(path),
+                            None => PathBuf::from("out.tar.gz"),
+                        };
+
+                        let outfile = src.join(&out);
+
+                        download_with_pb(url, &outfile).await?;
+
+                        let shasumactual = calculate_sha56sum(&outfile)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(sha256sum) = self.sha256sum {
+                            if sha256sum != shasumactual {
+                                eprintln!(
+                                    "expected sha for {} was {} expected {}",
+                                    out.display(),
+                                    shasumactual,
+                                    sha256sum
+                                );
+                                exit(1);
+                            }
+                        } else {
+                            unreachable!()
+                        }
+
+                        Ok(out)
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    if let Some(path) = self.path {
+                        let srcpath = src.join(&path);
+                        copy(path, &srcpath).map_err(|e| e.to_string())?;
+                        Ok(srcpath)
+                    } else {
+                        Err("either url or path is required".to_string())
+                    }
+                }
             }
             SourceType::Patch => {
-                unimplemented!()
+                if self.url.is_some() {
+                    if self.sha256sum.is_none() {
+                        eprintln!("Source type was set to File and there was a url but no sha256sum was provided");
+                        exit(78);
+                    }
+                    if let Some(url) = self.url {
+                        let out = match get_filename_from_url(&url) {
+                            Some(path) => PathBuf::from(path),
+                            None => PathBuf::from("out.tar.gz"),
+                        };
+
+                        let outfile = src.join(&out);
+
+                        download_with_pb(url, &outfile).await?;
+
+                        let shasumactual = calculate_sha56sum(&outfile)
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(sha256sum) = self.sha256sum {
+                            if sha256sum != shasumactual {
+                                eprintln!(
+                                    "expected sha for {} was {} expected {}",
+                                    out.display(),
+                                    shasumactual,
+                                    sha256sum
+                                );
+                                exit(1);
+                            }
+                        } else {
+                            unreachable!()
+                        }
+
+                        Ok(out)
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    if let Some(path) = self.path {
+                        let srcpath = src.join(&path);
+                        copy(path, &srcpath).map_err(|e| e.to_string())?;
+                        Ok(srcpath)
+                    } else {
+                        Err("either url or path is required".to_string())
+                    }
+                }
             }
         }
     }

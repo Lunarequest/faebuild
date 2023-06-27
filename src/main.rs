@@ -42,9 +42,18 @@ async fn main() {
                 let file = File::open(buildconfig).unwrap();
 
                 let config: BuildConfig = from_reader(file).unwrap();
+                let mut patches: Vec<PathBuf> = vec![];
 
                 for source in config.sources {
-                    source.fetch(&srcdir, &workdir).await.unwrap();
+                    match source.r#type {
+                        buildconfig::SourceType::Patch => {
+                            let path = source.fetch(&srcdir, &workdir).await.unwrap();
+                            patches.append(&mut vec![path]);
+                        }
+                        _ => {
+                            source.fetch(&srcdir, &workdir).await.unwrap();
+                        }
+                    }
                 }
             } else {
                 if args.verbose {
