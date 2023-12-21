@@ -1,43 +1,37 @@
 mod buildconfig;
 mod cli;
 mod utils;
+use anyhow::{anyhow, Result};
 use buildconfig::BuildConfig;
 use clap::Parser;
 use cli::{Cli, Commands};
 use serde_yaml::from_reader;
 use std::{
-    fs::{create_dir, File},
+    fs::{create_dir, remove_dir_all, File},
     path::PathBuf,
-    process::exit,
 };
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     let args = Cli::parse();
     match args.command {
         Commands::Build { path } => {
-            let builddir = match path.unwrap_or(PathBuf::from(".")).canonicalize() {
-                Ok(config) => config,
-                Err(e) => {
-                    if args.verbose {
-                        eprintln!("DEBUG TRACE BACK: {e}");
-                    }
-                    eprintln!("failed to resolve directory, does it exist?");
-                    exit(72);
-                }
-            };
+            let builddir = path.unwrap_or(PathBuf::from(".")).canonicalize()?;
             if builddir.exists() {
                 let buildconfig = builddir.join("faebuild.yaml");
-                if buildconfig.exists() {
-                } else {
-                    eprintln!("failed to find faebuild.yaml, does it exist?");
-                    exit(72);
+                if !buildconfig.exists() {
+                    return Err(anyhow!("failed to find faebuild.yaml, does it exist?"));
                 }
 
                 let workdir = builddir.join("build");
                 let srcdir = builddir.join("src");
+                if workdir.exists() {
+                    remove_dir_all(&workdir).unwrap();
+                }
                 create_dir(&workdir).expect("failed to create dir build");
-                create_dir(&srcdir).expect("failed to create directory src");
+                if !srcdir.exists() {
+                    create_dir(&srcdir).expect("failed to create directory src");
+                }
 
                 let file = File::open(buildconfig).unwrap();
 
@@ -55,13 +49,16 @@ async fn main() {
                         }
                     }
                 }
+                if !patches.is_empty() {
+                    utils::patch(patches, &workdir)?;
+                }
             } else {
                 if args.verbose {
                     eprintln!("DEBUG RESOLVED DIR: {}", builddir.display());
                 }
-                eprintln!("failed to find directory, does it exist?");
-                exit(72);
+                return Err(anyhow!("failed to find directory, does it exist?"));
             }
         }
     }
+    Ok(())
 }

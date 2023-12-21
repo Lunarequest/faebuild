@@ -1,16 +1,16 @@
+use anyhow::Result;
 use git2::{AutotagOption, FetchOptions, RemoteCallbacks, Repository};
 use std::{
     io::{self, Write},
     str,
 };
 
-pub fn fetch(repo: &Repository) -> Result<(), String> {
+pub fn fetch(repo: &Repository) -> Result<()> {
     let mut cb = RemoteCallbacks::new();
 
     let mut remote = repo
         .find_remote("origin")
-        .or_else(|_| repo.remote_anonymous("origin"))
-        .map_err(|e| e.to_string())?;
+        .or_else(|_| repo.remote_anonymous("origin"))?;
 
     cb.sideband_progress(|data| {
         print!("remote: {}", str::from_utf8(data).unwrap());
@@ -58,9 +58,7 @@ pub fn fetch(repo: &Repository) -> Result<(), String> {
     // progress.
     let mut fo = FetchOptions::new();
     fo.remote_callbacks(cb);
-    remote
-        .download(&[] as &[&str], Some(&mut fo))
-        .map_err(|e| e.to_string())?;
+    remote.download(&[] as &[&str], Some(&mut fo))?;
 
     {
         // If there are local objects (we got a thin pack), then tell the user
@@ -86,14 +84,12 @@ pub fn fetch(repo: &Repository) -> Result<(), String> {
     }
 
     // Disconnect the underlying connection to prevent from idling.
-    remote.disconnect().map_err(|e| e.to_string())?;
+    remote.disconnect()?;
 
     // Update the references in the remote's namespace to point to the right
     // commits. This may be needed even if there was no packfile to download,
     // which can happen e.g. when the branches have been changed but all the
     // needed objects are available locally.
-    remote
-        .update_tips(None, true, AutotagOption::Unspecified, None)
-        .map_err(|e| e.to_string())?;
+    remote.update_tips(None, true, AutotagOption::Unspecified, None)?;
     Ok(())
 }
